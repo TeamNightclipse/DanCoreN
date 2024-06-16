@@ -1,0 +1,11 @@
+[package]
+name = "DanCoreN"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+enumset = "1.1.3"
+nalgebra = "0.32.6"
+nalgebra-glm = "0.18.0"
+itertools = "0.13.0"
+priority-queue = "2.0.3"

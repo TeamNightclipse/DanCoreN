@@ -1,19 +1,17 @@
+use crate::behavior::danmaku_data::{BehaviorData, DanmakuSpawnData, RenderData};
+use crate::behavior::main_columns::{Columns, DataColumns};
+use crate::behavior::Behavior;
+use crate::color::ColorHex;
 use enumset::EnumSet;
+use nalgebra::{Matrix4, UnitQuaternion, Vector3};
+use priority_queue::PriorityQueue;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-
-use crate::behavior::{Behavior, BehaviorNoOp};
-use priority_queue::PriorityQueue;
-
-use crate::behavior::danmaku_data::{DanmakuSpawnData, RenderData};
-use crate::behavior::main_columns::{Columns, RequiredMainColumns};
-use crate::color::ColorHex;
-use itertools::Itertools;
-use nalgebra::{Matrix4, UnitQuaternion, Vector3};
+use std::rc::Rc;
 
 pub struct TopDanmakuBehaviorsHandler {
     handlers: HashMap<Vec<&'static str>, DanmakuBehaviorHandler>,
-    no_op_behaviors: HashMap<&'static str, fn() -> Box<dyn Behavior>>,
+    behaviors: HashMap<&'static str, Rc<Behavior>>,
 
     global_family_depth_map: HashMap<i128, i16>,
     global_parent_map: HashMap<i128, i128>,
@@ -25,7 +23,7 @@ impl TopDanmakuBehaviorsHandler {
     pub fn new() -> TopDanmakuBehaviorsHandler {
         TopDanmakuBehaviorsHandler {
             handlers: HashMap::new(),
-            no_op_behaviors: HashMap::new(),
+            behaviors: HashMap::new(),
             global_family_depth_map: HashMap::new(),
             global_parent_map: HashMap::new(),
 
@@ -33,10 +31,9 @@ impl TopDanmakuBehaviorsHandler {
         }
     }
 
-    pub fn register_behavior<A: Behavior + BehaviorNoOp + 'static>(&mut self) {
-        let no_op = A::no_op_data();
-        self.no_op_behaviors
-            .insert(no_op.identifier(), || Box::new(A::no_op_data()));
+    pub fn register_behavior(&mut self, behavior: Behavior) {
+        self.behaviors
+            .insert(behavior.identifier, Rc::new(behavior));
     }
 
     fn add_single_danmaku(
@@ -44,27 +41,22 @@ impl TopDanmakuBehaviorsHandler {
         d: DanmakuSpawnData,
         preferred_idx: Option<(usize, i64)>,
     ) -> Vec<DanmakuSpawnData> {
-        let behavior_identifiers: Vec<&'static str> =
-            d.behavior.iter().map(|b| b.identifier()).collect();
-
-        let handler = match self.handlers.get_mut(&behavior_identifiers) {
+        let handler = match self.handlers.get_mut(&d.behaviors) {
             Some(t) => t,
             None => {
-                let no_ops = d
-                    .behavior
+                let behaviors = d
+                    .behaviors
                     .iter()
-                    .map(|b| self.no_op_behaviors.get(b.identifier()).unwrap()())
+                    .map(|b| Rc::clone(self.behaviors.get(b).unwrap()))
                     .collect();
 
                 self.next_identifier += 1;
                 self.handlers.insert(
-                    behavior_identifiers,
-                    DanmakuBehaviorHandler::new(self.next_identifier, no_ops, false),
+                    d.behaviors.clone(),
+                    DanmakuBehaviorHandler::new(self.next_identifier, behaviors, false),
                 );
 
-                let id: Vec<&'static str> = d.behavior.iter().map(|b| b.identifier()).collect();
-
-                self.handlers.get_mut(&id).unwrap()
+                self.handlers.get_mut(&d.behaviors).unwrap()
             }
         };
 
@@ -105,7 +97,10 @@ impl TopDanmakuBehaviorsHandler {
 
         for h in self.handlers.values_mut() {
             for (d, idx) in h.tick() {
-                with_idx.push((d, idx, h.identifier))
+                match idx {
+                    None => simple.push(d),
+                    Some(i) => with_idx.push((d, i, h.identifier))
+                }
             }
         }
 
@@ -164,25 +159,18 @@ struct DanmakuBehaviorHandler {
     size_exp: u8,
     current_size: usize,
 
-    behavior_no_ops: Vec<Box<dyn Behavior>>,
+    behaviors: Vec<Rc<Behavior>>,
     columns: Columns,
 }
 
 impl DanmakuBehaviorHandler {
     fn new(
         identifier: i64,
-        behavior_no_ops: Vec<Box<dyn Behavior>>,
+        behaviors: Vec<Rc<Behavior>>,
         always_keep: bool,
     ) -> DanmakuBehaviorHandler {
-        let required_main_columns: EnumSet<RequiredMainColumns> = behavior_no_ops
-            .iter()
-            .map(|b| b.required_main_columns())
-            .collect();
-        let extra_data_identifiers = behavior_no_ops
-            .iter()
-            .flat_map(|b| b.extra_columns())
-            .unique()
-            .collect();
+        let required_main_columns: EnumSet<DataColumns> =
+            behaviors.iter().map(|b| b.required_columns).collect();
 
         let size_exp = 7;
         let max_size = 1 << size_exp;
@@ -195,8 +183,8 @@ impl DanmakuBehaviorHandler {
             size_exp,
             current_size: 0,
 
-            behavior_no_ops,
-            columns: Columns::new(max_size, required_main_columns, extra_data_identifiers),
+            behaviors,
+            columns: Columns::new(max_size, required_main_columns),
         }
     }
 
@@ -228,6 +216,18 @@ impl DanmakuBehaviorHandler {
         self.current_size + length >= self.current_max_size()
     }
 
+    fn transfer_data<A>(
+        required_columns: EnumSet<DataColumns>,
+        i: usize,
+        required: DataColumns,
+        vec: &mut Vec<A>,
+        data: A,
+    ) {
+        if required_columns.contains(required) {
+            vec[i] = data;
+        }
+    }
+
     fn add_danmaku_with_preffered_index(
         &mut self,
         mut danmaku: DanmakuSpawnData,
@@ -248,35 +248,269 @@ impl DanmakuBehaviorHandler {
         self.next_dan_identifier += 1;
 
         self.columns.id[i] = this_id;
+        
+        let render_properties = danmaku.render_properties;
 
-        self.columns.pos_x[i] = danmaku.pos.x;
-        self.columns.pos_y[i] = danmaku.pos.y;
-        self.columns.pos_z[i] = danmaku.pos.z;
-
-        self.columns.old_pos_x[i] = danmaku.pos.x;
-        self.columns.old_pos_y[i] = danmaku.pos.y;
-        self.columns.old_pos_z[i] = danmaku.pos.z;
-
-        self.columns.orientation[i] = danmaku.orientation;
-        self.columns.old_orientation[i] = danmaku.orientation;
-
-        self.columns.scale_x[i] = danmaku.shot_data.size_x;
-        self.columns.scale_y[i] = danmaku.shot_data.size_y;
-        self.columns.scale_z[i] = danmaku.shot_data.size_z;
-
-        self.columns.main_color[i] = danmaku.shot_data.main_color;
-        self.columns.old_main_color[i] = danmaku.shot_data.main_color;
-        self.columns.secondary_color[i] = danmaku.shot_data.secondary_color;
-        self.columns.old_secondary_color[i] = danmaku.shot_data.secondary_color;
-
-        self.columns.damage[i] = danmaku.shot_data.damage;
-        self.columns.form[i] = danmaku.shot_data.form;
-        self.columns.render_properties[i] = danmaku.shot_data.render_properties;
+        for d in danmaku.behavior_data {
+            match d {
+                BehaviorData::PosX(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::PosX,
+                        &mut self.columns.pos_x,
+                        v,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::PosX,
+                        &mut self.columns.old_pos_x,
+                        v,
+                    );
+                }
+                BehaviorData::PosY(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::PosY,
+                        &mut self.columns.pos_y,
+                        v,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::PosY,
+                        &mut self.columns.old_pos_y,
+                        v,
+                    );
+                }
+                BehaviorData::PosZ(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::PosZ,
+                        &mut self.columns.pos_z,
+                        v,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::PosZ,
+                        &mut self.columns.old_pos_z,
+                        v,
+                    );
+                }
+                BehaviorData::Orientation(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::Orientation,
+                        &mut self.columns.orientation,
+                        v,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::Orientation,
+                        &mut self.columns.old_orientation,
+                        v,
+                    );
+                }
+                BehaviorData::Appearance {
+                    form,
+                } => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::Appearance,
+                        &mut self.columns.form,
+                        form,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::Appearance,
+                        &mut self.columns.render_properties,
+                        render_properties.clone(),
+                    );
+                }
+                BehaviorData::MainColor(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::MainColor,
+                        &mut self.columns.main_color,
+                        v,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::MainColor,
+                        &mut self.columns.old_main_color,
+                        v,
+                    );
+                }
+                BehaviorData::SecondaryColor(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::SecondaryColor,
+                        &mut self.columns.secondary_color,
+                        v,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::SecondaryColor,
+                        &mut self.columns.old_secondary_color,
+                        v,
+                    );
+                }
+                BehaviorData::Damage(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::Damage,
+                        &mut self.columns.damage,
+                        v,
+                    );
+                }
+                BehaviorData::SizeX(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::ScaleX,
+                        &mut self.columns.scale_x,
+                        v,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::ScaleX,
+                        &mut self.columns.old_scale_x,
+                        v,
+                    );
+                }
+                BehaviorData::SizeY(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::ScaleY,
+                        &mut self.columns.scale_y,
+                        v,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::ScaleY,
+                        &mut self.columns.old_scale_y,
+                        v,
+                    );
+                }
+                BehaviorData::SizeZ(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::ScaleZ,
+                        &mut self.columns.scale_z,
+                        v,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::ScaleZ,
+                        &mut self.columns.old_scale_z,
+                        v,
+                    );
+                }
+                BehaviorData::MotionX(v) => Self::transfer_data(
+                    self.columns.required_columns,
+                    i,
+                    DataColumns::MotionX,
+                    &mut self.columns.motion_x,
+                    v,
+                ),
+                BehaviorData::MotionY(v) => Self::transfer_data(
+                    self.columns.required_columns,
+                    i,
+                    DataColumns::MotionY,
+                    &mut self.columns.motion_x,
+                    v,
+                ),
+                BehaviorData::MotionZ(v) => Self::transfer_data(
+                    self.columns.required_columns,
+                    i,
+                    DataColumns::MotionZ,
+                    &mut self.columns.motion_x,
+                    v,
+                ),
+                BehaviorData::GravityX(v) => Self::transfer_data(
+                    self.columns.required_columns,
+                    i,
+                    DataColumns::GravityX,
+                    &mut self.columns.motion_x,
+                    v,
+                ),
+                BehaviorData::GravityY(v) => Self::transfer_data(
+                    self.columns.required_columns,
+                    i,
+                    DataColumns::GravityY,
+                    &mut self.columns.motion_x,
+                    v,
+                ),
+                BehaviorData::GravityZ(v) => Self::transfer_data(
+                    self.columns.required_columns,
+                    i,
+                    DataColumns::GravityZ,
+                    &mut self.columns.motion_x,
+                    v,
+                ),
+                BehaviorData::SpeedAccel(v) => Self::transfer_data(
+                    self.columns.required_columns,
+                    i,
+                    DataColumns::SpeedAccel,
+                    &mut self.columns.speed_accel,
+                    v,
+                ),
+                BehaviorData::Forward(v) => {
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::Forward,
+                        &mut self.columns.forward_x,
+                        v.x,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::Forward,
+                        &mut self.columns.forward_z,
+                        v.y,
+                    );
+                    Self::transfer_data(
+                        self.columns.required_columns,
+                        i,
+                        DataColumns::Forward,
+                        &mut self.columns.forward_z,
+                        v.z,
+                    );
+                },
+                BehaviorData::Rotation(v) => Self::transfer_data(
+                    self.columns.required_columns,
+                    i,
+                    DataColumns::Rotation,
+                    &mut self.columns.rotation,
+                    v,
+                ),
+            }
+        }
 
         self.columns.ticks_existed[i] = 0;
-        self.columns.end_time[i] = danmaku.shot_data.end_time;
+        self.columns.end_time[i] = danmaku.end_time;
         self.columns.dead[i] = false;
         self.columns.next_stage[i] = danmaku.next_stage;
+        self.columns.next_stage_add_data[i] = danmaku.next_stage_add_data;
         self.columns.parent[i] = danmaku.parent.unwrap_or(-1);
         self.columns.family_depth[i] = danmaku.family_depth;
 
@@ -284,26 +518,6 @@ impl DanmakuBehaviorHandler {
             global_parent_map.insert(this_id, *parent_id);
         });
         global_family_depth_map.insert(this_id, danmaku.family_depth);
-
-        let mut jd = 0;
-        let mut js = 0;
-        loop {
-            match (danmaku.behavior.get(jd), self.behavior_no_ops.get(js)) {
-                (Some(data), Some(no_op)) if data.identifier() == no_op.identifier() => {
-                    data.transfer_extra_data(&mut self.columns, i);
-                    jd += 1;
-                    js += 1;
-                }
-                (_, Some(no_op)) => {
-                    no_op.transfer_extra_data(&mut self.columns, i);
-                    js += 1;
-                }
-                (Some(_), None) => {
-                    panic!("Found data without handler")
-                }
-                (None, None) => break,
-            }
-        }
 
         self.columns.transform_mats[i].fill_with_identity();
 
@@ -314,28 +528,18 @@ impl DanmakuBehaviorHandler {
         danmaku.children
     }
 
-    fn tick(&mut self) -> Vec<(DanmakuSpawnData, usize)> {
-        for behavior in self.behavior_no_ops.iter() {
-            behavior.act(&mut self.columns, self.current_size);
+    fn tick(&mut self) -> Vec<(DanmakuSpawnData, Option<usize>)> {
+        for behavior in self.behaviors.iter() {
+            (behavior.act)(&mut self.columns, self.current_size);
         }
 
         self.columns.grab_new_spawns()
     }
 
-    fn lerp(start: f32, end: f32, t: f32) -> f32 {
-        start * (1.0 - t) + end * t
-    }
-
     #[inline]
-    fn lerp_if_used(
-        partial_ticks: f32,
-        used: bool,
-        i: usize,
-        old: &[f32],
-        new: &[f32],
-    ) -> f32 {
+    fn lerp_if_used(partial_ticks: f32, used: bool, i: usize, old: &[f32], new: &[f32]) -> f32 {
         if used {
-            Self::lerp(
+            nalgebra_glm::lerp_scalar(
                 *old.get(i).unwrap_or(&0.0),
                 *new.get(i).unwrap_or(&0.0),
                 partial_ticks,
@@ -346,17 +550,16 @@ impl DanmakuBehaviorHandler {
     }
 
     fn compute_transform_mats(&mut self, partial_ticks: f32) {
-        let required_main_columns = self.columns.required_main_columns;
+        let required_main_columns = self.columns.required_columns;
 
-        if required_main_columns.contains(RequiredMainColumns::Appearance) {
-            let requires_scale_x = required_main_columns.contains(RequiredMainColumns::ScaleX);
-            let requires_scale_y = required_main_columns.contains(RequiredMainColumns::ScaleY);
-            let requires_scale_z = required_main_columns.contains(RequiredMainColumns::ScaleZ);
-            let requires_pos_x = required_main_columns.contains(RequiredMainColumns::PosX);
-            let requires_pos_y = required_main_columns.contains(RequiredMainColumns::PosY);
-            let requires_pos_z = required_main_columns.contains(RequiredMainColumns::PosZ);
-            let requires_orientation =
-                required_main_columns.contains(RequiredMainColumns::Orientation);
+        if required_main_columns.contains(DataColumns::Appearance) {
+            let requires_scale_x = required_main_columns.contains(DataColumns::ScaleX);
+            let requires_scale_y = required_main_columns.contains(DataColumns::ScaleY);
+            let requires_scale_z = required_main_columns.contains(DataColumns::ScaleZ);
+            let requires_pos_x = required_main_columns.contains(DataColumns::PosX);
+            let requires_pos_y = required_main_columns.contains(DataColumns::PosY);
+            let requires_pos_z = required_main_columns.contains(DataColumns::PosZ);
+            let requires_orientation = required_main_columns.contains(DataColumns::Orientation);
 
             let mut temp = Matrix4::identity();
 
@@ -455,33 +658,41 @@ impl DanmakuBehaviorHandler {
         let dead = &self.columns.dead;
         let id = &self.columns.id;
 
-        (0..self.current_size)
-            .filter(|i| !dead.get(*i).unwrap_or(&false))
-            .map(|i| (id.get(i).unwrap_or(&0), i))
-            .map(|(id, i)| {
-                let main_color = ColorHex(*main_color.get(i).unwrap_or(&0));
-                let old_main_color = ColorHex(*old_main_color.get(i).unwrap_or(&0));
-                let secondary_color = ColorHex(*secondary_color.get(i).unwrap_or(&0));
-                let old_secondary_color = ColorHex(*old_secondary_color.get(i).unwrap_or(&0));
+        if self
+            .columns
+            .required_columns
+            .contains(DataColumns::Appearance)
+        {
+            (0..self.current_size)
+                .filter(|i| !dead.get(*i).unwrap_or(&false))
+                .map(|i| (id.get(i).unwrap_or(&0), i))
+                .map(|(id, i)| {
+                    let main_color = ColorHex(*main_color.get(i).unwrap_or(&0));
+                    let old_main_color = ColorHex(*old_main_color.get(i).unwrap_or(&0));
+                    let secondary_color = ColorHex(*secondary_color.get(i).unwrap_or(&0));
+                    let old_secondary_color = ColorHex(*old_secondary_color.get(i).unwrap_or(&0));
 
-                (
-                    *id,
-                    RenderData {
-                        form: form.get(i).unwrap(),
-                        render_properties: render_properties.get(i).unwrap(),
-                        model_mat: *transform_mats.get(i).unwrap_or(&Matrix4::identity()),
-                        model_view_mat: Matrix4::identity(),
-                        main_color: old_main_color.lerp_through_hsv(main_color, partial_ticks).0,
-                        secondary_color: old_secondary_color
-                            .lerp_through_hsv(secondary_color, partial_ticks)
-                            .0,
-                        ticks_existed: *ticks_existed.get(i).unwrap_or(&0),
-                        end_time: *end_time.get(i).unwrap_or(&0),
-                        distance_from_camera: -1.0,
-                    },
-                )
-            })
-            .collect()
+                    (
+                        *id,
+                        RenderData {
+                            form: form.get(i).unwrap(),
+                            render_properties: render_properties.get(i).unwrap(),
+                            model_mat: *transform_mats.get(i).unwrap_or(&Matrix4::identity()),
+                            main_color: old_main_color
+                                .lerp_through_hsv(main_color, partial_ticks)
+                                .0,
+                            secondary_color: old_secondary_color
+                                .lerp_through_hsv(secondary_color, partial_ticks)
+                                .0,
+                            ticks_existed: *ticks_existed.get(i).unwrap_or(&0),
+                            end_time: *end_time.get(i).unwrap_or(&0),
+                        },
+                    )
+                })
+                .collect()
+        } else {
+            vec![]
+        }
     }
 
     fn resize(&mut self, force_up: bool) {
@@ -499,81 +710,14 @@ impl DanmakuBehaviorHandler {
         self.columns.resize(self.current_max_size());
     }
 
-    fn compact_vec<A>(vec: &mut Vec<A>, remove: &[bool]) {
-        let mut j = 0;
-        vec.retain(|_| {
-            j += 1;
-            *remove.get(j - 1).unwrap_or(&false)
-        })
-    }
-
     fn compact(&mut self) {
+        let dead = self.dead();
         // No need to compact if the amount of dead is not too great
-        if (self.dead() as f64) < self.current_size as f64 * 0.2 {
+        if (dead as f64) < self.current_size as f64 * 0.2 {
             return;
         }
 
-        let dead = &self.columns.dead;
-
-        [&mut self.columns.id, &mut self.columns.parent]
-            .iter_mut()
-            .for_each(|d| Self::compact_vec(d, dead));
-        [
-            &mut self.columns.pos_x,
-            &mut self.columns.pos_y,
-            &mut self.columns.pos_z,
-            &mut self.columns.old_pos_x,
-            &mut self.columns.old_pos_y,
-            &mut self.columns.old_pos_z,
-            &mut self.columns.scale_x,
-            &mut self.columns.scale_y,
-            &mut self.columns.scale_z,
-            &mut self.columns.old_scale_x,
-            &mut self.columns.old_scale_y,
-            &mut self.columns.old_scale_z,
-            &mut self.columns.damage,
-        ]
-        .iter_mut()
-        .for_each(|d| Self::compact_vec(d, dead));
-
-        self.columns
-            .extra_data
-            .values_mut()
-            .for_each(|d| Self::compact_vec(d, dead));
-
-        [
-            &mut self.columns.orientation,
-            &mut self.columns.old_orientation,
-        ]
-        .iter_mut()
-        .for_each(|d| Self::compact_vec(d, dead));
-
-        [
-            &mut self.columns.main_color,
-            &mut self.columns.old_main_color,
-            &mut self.columns.secondary_color,
-            &mut self.columns.old_secondary_color,
-        ]
-        .iter_mut()
-        .for_each(|d| Self::compact_vec(d, dead));
-
-        Self::compact_vec(&mut self.columns.form, dead);
-        Self::compact_vec(&mut self.columns.render_properties, dead);
-
-        [
-            &mut self.columns.ticks_existed,
-            &mut self.columns.end_time,
-            &mut self.columns.family_depth,
-        ]
-        .iter_mut()
-        .for_each(|d| Self::compact_vec(d, dead));
-
-        Self::compact_vec(&mut self.columns.next_stage, dead);
-        Self::compact_vec(&mut self.columns.transform_mats, dead);
-
-        let _ = &mut self.columns.dead.retain(|d| *d);
-
-        self.current_size -= self.columns.current_dead.len();
-        let _ = &mut self.columns.current_dead.clear();
+        self.columns.compact();
+        self.current_size -= dead;
     }
 }

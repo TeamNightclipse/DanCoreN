@@ -1,15 +1,47 @@
 use std::collections::HashMap;
+use enumset::EnumSet;
 
-use nalgebra::{Matrix4, UnitQuaternion, Vector3};
+use nalgebra::{Matrix4, UnitQuaternion, UnitVector3};
+use crate::behavior::main_columns::DataColumns;
 
-use crate::behavior::Behavior;
 use crate::form::Form;
 
+#[derive(Clone, Debug)]
+pub enum BehaviorData {
+    PosX(f32),
+    PosY(f32),
+    PosZ(f32),
+    Orientation(UnitQuaternion<f32>),
+    Appearance {
+        form: &'static Form,
+    },
+    MainColor(i32),
+    SecondaryColor(i32),
+    Damage(f32),
+    SizeX(f32),
+    SizeY(f32),
+    SizeZ(f32),
+    
+    MotionX(f32),
+    MotionY(f32),
+    MotionZ(f32),
+
+    GravityX(f32),
+    GravityY(f32),
+    GravityZ(f32),
+    
+    SpeedAccel(f32),
+    Forward(UnitVector3<f32>),
+    Rotation(UnitQuaternion<f32>)
+}
+
+#[derive(Clone)]
 pub struct DanmakuSpawnData {
-    pub pos: Vector3<f32>,
-    pub orientation: UnitQuaternion<f32>,
-    pub shot_data: ShotData,
-    pub behavior: Vec<Box<dyn Behavior>>,
+    pub end_time: i16,
+    pub behavior_data: Vec<BehaviorData>,
+    pub render_properties: HashMap<&'static str, f32>,
+    pub behaviors: Vec<&'static str>,
+    pub next_stage_add_data: EnumSet<DataColumns>,
     pub next_stage: Vec<DanmakuSpawnData>,
     pub parent: Option<i128>,
     pub children: Vec<DanmakuSpawnData>,
@@ -48,43 +80,12 @@ impl DanmakuSpawnData {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct ShotData {
-    pub form: &'static Form,
-    pub render_properties: HashMap<&'static str, f32>,
-    pub main_color: i32,
-    pub secondary_color: i32,
-    pub damage: f32,
-    pub size_x: f32,
-    pub size_y: f32,
-    pub size_z: f32,
-    pub end_time: i16,
-}
-
-impl ShotData {
-    pub fn new(form: &'static Form) -> ShotData {
-        ShotData {
-            form,
-            render_properties: HashMap::new(),
-            main_color: 0xFF0000,
-            secondary_color: 0xFFFFFF,
-            damage: 2.0,
-            size_x: 0.5,
-            size_y: 0.5,
-            size_z: 0.5,
-            end_time: 100,
-        }
-    }
-}
-
 pub struct RenderData<'a> {
     pub form: &'static Form,
     pub render_properties: &'a HashMap<&'static str, f32>,
     pub model_mat: Matrix4<f32>,
-    pub model_view_mat: Matrix4<f32>,
     pub main_color: i32,
     pub secondary_color: i32,
     pub ticks_existed: i16,
     pub end_time: i16,
-    pub distance_from_camera: f64,
 }

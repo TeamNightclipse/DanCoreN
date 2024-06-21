@@ -1,3 +1,5 @@
+#![feature(portable_simd)]
+
 mod behavior;
 mod color;
 mod form;

@@ -1,5 +1,5 @@
 use crate::behavior::danmaku_data::{BehaviorData, DanmakuSpawnData, RenderData};
-use crate::behavior::main_columns::{Columns, DataColumns};
+use crate::behavior::main_columns::{Columns, DataColumns, N_F32};
 use crate::behavior::Behavior;
 use crate::color::ColorHex;
 use enumset::EnumSet;
@@ -8,6 +8,7 @@ use priority_queue::PriorityQueue;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::simd::{Simd, SimdElement};
 
 pub struct TopDanmakuBehaviorsHandler {
     handlers: HashMap<Vec<&'static str>, DanmakuBehaviorHandler>,
@@ -99,7 +100,7 @@ impl TopDanmakuBehaviorsHandler {
             for (d, idx) in h.tick() {
                 match idx {
                     None => simple.push(d),
-                    Some(i) => with_idx.push((d, i, h.identifier))
+                    Some(i) => with_idx.push((d, i, h.identifier)),
                 }
             }
         }
@@ -147,7 +148,7 @@ impl TopDanmakuBehaviorsHandler {
 
     pub fn cleanup(&mut self) {
         self.handlers.retain(|_, h| h.always_keep || h.count() > 0);
-        self.handlers.values_mut().for_each(|h| h.compact())
+        // TODO: Scale down
     }
 }
 
@@ -201,26 +202,44 @@ impl DanmakuBehaviorHandler {
     }
 
     fn should_resize_up_soon(&self) -> bool {
+        if self.size_exp > 30 {
+            return false;
+        }
+
         let max = self.current_max_size();
         self.current_size as f64 + (max as f64 * 0.1) > max as f64
     }
 
     fn should_resize_down_soon(&self) -> bool {
+        if self.size_exp < 8 {
+            return false;
+        }
         let step_down_max_size = 1 << (self.size_exp - 1);
-        self.size_exp > 7
-            && self.current_size as f64 + (step_down_max_size as f64 * 0.25)
-                < step_down_max_size as f64
+        let surplus_if_step_down = step_down_max_size - self.current_size;
+        surplus_if_step_down as f64 > (step_down_max_size as f64 * 0.1)
     }
 
     fn must_resize_before_add(&self, length: usize) -> bool {
         self.current_size + length >= self.current_max_size()
     }
 
+    fn transfer_data_simd<A: SimdElement>(
+        required_columns: EnumSet<DataColumns>,
+        i: usize,
+        required: DataColumns,
+        vec: &mut [Simd<A, N_F32>],
+        data: A,
+    ) {
+        if required_columns.contains(required) {
+            vec[i.div_ceil(N_F32)][i % N_F32] = data;
+        }
+    }
+
     fn transfer_data<A>(
         required_columns: EnumSet<DataColumns>,
         i: usize,
         required: DataColumns,
-        vec: &mut Vec<A>,
+        vec: &mut [A],
         data: A,
     ) {
         if required_columns.contains(required) {
@@ -248,20 +267,20 @@ impl DanmakuBehaviorHandler {
         self.next_dan_identifier += 1;
 
         self.columns.id[i] = this_id;
-        
+
         let render_properties = danmaku.render_properties;
 
         for d in danmaku.behavior_data {
             match d {
                 BehaviorData::PosX(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::PosX,
                         &mut self.columns.pos_x,
                         v,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::PosX,
@@ -270,14 +289,14 @@ impl DanmakuBehaviorHandler {
                     );
                 }
                 BehaviorData::PosY(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::PosY,
                         &mut self.columns.pos_y,
                         v,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::PosY,
@@ -286,14 +305,14 @@ impl DanmakuBehaviorHandler {
                     );
                 }
                 BehaviorData::PosZ(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::PosZ,
                         &mut self.columns.pos_z,
                         v,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::PosZ,
@@ -317,9 +336,7 @@ impl DanmakuBehaviorHandler {
                         v,
                     );
                 }
-                BehaviorData::Appearance {
-                    form,
-                } => {
+                BehaviorData::Appearance { form } => {
                     Self::transfer_data(
                         self.columns.required_columns,
                         i,
@@ -336,14 +353,14 @@ impl DanmakuBehaviorHandler {
                     );
                 }
                 BehaviorData::MainColor(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::MainColor,
                         &mut self.columns.main_color,
                         v,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::MainColor,
@@ -352,14 +369,14 @@ impl DanmakuBehaviorHandler {
                     );
                 }
                 BehaviorData::SecondaryColor(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::SecondaryColor,
                         &mut self.columns.secondary_color,
                         v,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::SecondaryColor,
@@ -368,7 +385,7 @@ impl DanmakuBehaviorHandler {
                     );
                 }
                 BehaviorData::Damage(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::Damage,
@@ -377,14 +394,14 @@ impl DanmakuBehaviorHandler {
                     );
                 }
                 BehaviorData::SizeX(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::ScaleX,
                         &mut self.columns.scale_x,
                         v,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::ScaleX,
@@ -393,14 +410,14 @@ impl DanmakuBehaviorHandler {
                     );
                 }
                 BehaviorData::SizeY(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::ScaleY,
                         &mut self.columns.scale_y,
                         v,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::ScaleY,
@@ -409,14 +426,14 @@ impl DanmakuBehaviorHandler {
                     );
                 }
                 BehaviorData::SizeZ(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::ScaleZ,
                         &mut self.columns.scale_z,
                         v,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::ScaleZ,
@@ -424,49 +441,49 @@ impl DanmakuBehaviorHandler {
                         v,
                     );
                 }
-                BehaviorData::MotionX(v) => Self::transfer_data(
+                BehaviorData::MotionX(v) => Self::transfer_data_simd(
                     self.columns.required_columns,
                     i,
                     DataColumns::MotionX,
                     &mut self.columns.motion_x,
                     v,
                 ),
-                BehaviorData::MotionY(v) => Self::transfer_data(
+                BehaviorData::MotionY(v) => Self::transfer_data_simd(
                     self.columns.required_columns,
                     i,
                     DataColumns::MotionY,
                     &mut self.columns.motion_x,
                     v,
                 ),
-                BehaviorData::MotionZ(v) => Self::transfer_data(
+                BehaviorData::MotionZ(v) => Self::transfer_data_simd(
                     self.columns.required_columns,
                     i,
                     DataColumns::MotionZ,
                     &mut self.columns.motion_x,
                     v,
                 ),
-                BehaviorData::GravityX(v) => Self::transfer_data(
+                BehaviorData::GravityX(v) => Self::transfer_data_simd(
                     self.columns.required_columns,
                     i,
                     DataColumns::GravityX,
                     &mut self.columns.motion_x,
                     v,
                 ),
-                BehaviorData::GravityY(v) => Self::transfer_data(
+                BehaviorData::GravityY(v) => Self::transfer_data_simd(
                     self.columns.required_columns,
                     i,
                     DataColumns::GravityY,
                     &mut self.columns.motion_x,
                     v,
                 ),
-                BehaviorData::GravityZ(v) => Self::transfer_data(
+                BehaviorData::GravityZ(v) => Self::transfer_data_simd(
                     self.columns.required_columns,
                     i,
                     DataColumns::GravityZ,
                     &mut self.columns.motion_x,
                     v,
                 ),
-                BehaviorData::SpeedAccel(v) => Self::transfer_data(
+                BehaviorData::SpeedAccel(v) => Self::transfer_data_simd(
                     self.columns.required_columns,
                     i,
                     DataColumns::SpeedAccel,
@@ -474,28 +491,28 @@ impl DanmakuBehaviorHandler {
                     v,
                 ),
                 BehaviorData::Forward(v) => {
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::Forward,
                         &mut self.columns.forward_x,
                         v.x,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::Forward,
                         &mut self.columns.forward_z,
                         v.y,
                     );
-                    Self::transfer_data(
+                    Self::transfer_data_simd(
                         self.columns.required_columns,
                         i,
                         DataColumns::Forward,
                         &mut self.columns.forward_z,
                         v.z,
                     );
-                },
+                }
                 BehaviorData::Rotation(v) => Self::transfer_data(
                     self.columns.required_columns,
                     i,
@@ -506,8 +523,8 @@ impl DanmakuBehaviorHandler {
             }
         }
 
-        self.columns.ticks_existed[i] = 0;
-        self.columns.end_time[i] = danmaku.end_time;
+        self.columns.ticks_existed[i.div_ceil(N_F32)][i % N_F32] = 0;
+        self.columns.end_time[i.div_ceil(N_F32)][i % N_F32] = danmaku.end_time;
         self.columns.dead[i] = false;
         self.columns.next_stage[i] = danmaku.next_stage;
         self.columns.next_stage_add_data[i] = danmaku.next_stage_add_data;
@@ -537,15 +554,21 @@ impl DanmakuBehaviorHandler {
     }
 
     #[inline]
-    fn lerp_if_used(partial_ticks: f32, used: bool, i: usize, old: &[f32], new: &[f32]) -> f32 {
+    fn lerp_if_used(
+        partial_ticks: f32,
+        used: bool,
+        i: usize,
+        old: &[Simd<f32, N_F32>],
+        new: &[Simd<f32, N_F32>],
+    ) -> f32 {
         if used {
             nalgebra_glm::lerp_scalar(
-                *old.get(i).unwrap_or(&0.0),
-                *new.get(i).unwrap_or(&0.0),
+                old[i.div_ceil(N_F32)][i % N_F32],
+                new[i.div_ceil(N_F32)][i % N_F32],
                 partial_ticks,
             )
         } else {
-            *new.get(i).unwrap_or(&0.0)
+            0.0
         }
     }
 
@@ -582,9 +605,8 @@ impl DanmakuBehaviorHandler {
 
             let dead = &self.columns.dead;
 
-            let mut i = 0;
-            while i < self.current_size {
-                if !dead.get(i).unwrap_or(&false) {
+            for i in 0..self.current_size {
+                if !dead[i] {
                     temp.fill_with_identity();
 
                     temp.append_nonuniform_scaling_mut(&Vector3::new(
@@ -637,8 +659,6 @@ impl DanmakuBehaviorHandler {
 
                     self.columns.transform_mats[i] = orientation_mat * temp;
                 }
-
-                i += 1
             }
         }
     }
@@ -657,6 +677,9 @@ impl DanmakuBehaviorHandler {
         let end_time = &self.columns.end_time;
         let dead = &self.columns.dead;
         let id = &self.columns.id;
+        
+        let has_main_color = self.columns.required_columns.contains(DataColumns::MainColor);
+        let has_secondary_color = self.columns.required_columns.contains(DataColumns::SecondaryColor);
 
         if self
             .columns
@@ -667,25 +690,28 @@ impl DanmakuBehaviorHandler {
                 .filter(|i| !dead.get(*i).unwrap_or(&false))
                 .map(|i| (id.get(i).unwrap_or(&0), i))
                 .map(|(id, i)| {
-                    let main_color = ColorHex(*main_color.get(i).unwrap_or(&0));
-                    let old_main_color = ColorHex(*old_main_color.get(i).unwrap_or(&0));
-                    let secondary_color = ColorHex(*secondary_color.get(i).unwrap_or(&0));
-                    let old_secondary_color = ColorHex(*old_secondary_color.get(i).unwrap_or(&0));
-
+                    let lerp_color = |has_color: bool, new: &Vec<Simd<i32, N_F32>>, old: &Vec<Simd<i32, N_F32>>| -> ColorHex {
+                        if has_color {
+                            ColorHex(new[i.div_ceil(N_F32)][i % N_F32])
+                                .lerp_through_hsv(ColorHex(old[i.div_ceil(N_F32)][i % N_F32]), partial_ticks)
+                        } else {
+                            ColorHex(0)
+                        }
+                    };
+                    
+                    let main_color = lerp_color(has_main_color, main_color, old_main_color);
+                    let secondary_color = lerp_color(has_secondary_color, secondary_color, old_secondary_color);
+                    
                     (
                         *id,
                         RenderData {
                             form: form.get(i).unwrap(),
                             render_properties: render_properties.get(i).unwrap(),
                             model_mat: *transform_mats.get(i).unwrap_or(&Matrix4::identity()),
-                            main_color: old_main_color
-                                .lerp_through_hsv(main_color, partial_ticks)
-                                .0,
-                            secondary_color: old_secondary_color
-                                .lerp_through_hsv(secondary_color, partial_ticks)
-                                .0,
-                            ticks_existed: *ticks_existed.get(i).unwrap_or(&0),
-                            end_time: *end_time.get(i).unwrap_or(&0),
+                            main_color: main_color.0,
+                            secondary_color: secondary_color.0,
+                            ticks_existed: ticks_existed[i.div_ceil(N_F32)][i & N_F32],
+                            end_time: end_time[i.div_ceil(N_F32)][i & N_F32],
                         },
                     )
                 })
@@ -696,28 +722,17 @@ impl DanmakuBehaviorHandler {
     }
 
     fn resize(&mut self, force_up: bool) {
-        if !force_up && self.dead() as f64 > self.current_size as f64 * 0.2 {
-            self.compact()
-        } else if force_up || self.should_resize_up_soon() {
-            self.size_exp += 1
+        if force_up || self.should_resize_up_soon() {
+            self.size_exp += 1;
+            self.columns.resize(self.current_max_size());
         } else if self.should_resize_down_soon() {
-            self.size_exp -= 1
+            let dead = self.dead();
+            self.size_exp -= 1;
+            self.columns.compact(self.current_max_size());
+            self.current_size -= dead;
         } else {
             // Something weird is going on. Cancel the resizing
             return;
         }
-
-        self.columns.resize(self.current_max_size());
-    }
-
-    fn compact(&mut self) {
-        let dead = self.dead();
-        // No need to compact if the amount of dead is not too great
-        if (dead as f64) < self.current_size as f64 * 0.2 {
-            return;
-        }
-
-        self.columns.compact();
-        self.current_size -= dead;
     }
 }

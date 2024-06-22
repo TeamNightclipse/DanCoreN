@@ -1,17 +1,18 @@
-use std::simd::Simd;
-use std::simd::num::SimdInt;
-use std::simd::cmp::SimdPartialOrd;
-use crate::behavior::danmaku_data::BehaviorData;
-use crate::behavior::columns::{Columns, DataColumns, N};
-use crate::behavior::Behavior;
+use crate::danmaku::{
+    handlers::TopDanmakuBehaviorsHandler,
+    standard::{StandardColumns, StandardDataColumns, StandardSpawnData},
+    Behavior, N,
+};
+
 use enumset::EnumSet;
 use multiversion::multiversion;
 use nalgebra::{UnitVector3, Vector3};
+use std::simd::{cmp::SimdPartialOrd, num::SimdInt, Simd};
 
 pub const MOTION1_BEHAVIOR_ID: &str = "motion1";
-pub fn motion1_behavior() -> Behavior {
+pub fn motion1_behavior() -> Behavior<StandardColumns> {
     #[multiversion(targets = "simd")]
-    fn act(columns: &mut Columns, size: usize) {
+    fn act(columns: &mut StandardColumns, size: usize) {
         let motion_z = &mut columns.motion_z[0..size.div_ceil(N)];
         let pos_z = &mut columns.pos_z[0..size.div_ceil(N)];
         let old_pos_z = &mut columns.old_pos_z[0..size.div_ceil(N)];
@@ -22,18 +23,18 @@ pub fn motion1_behavior() -> Behavior {
             pos_z[i] += motion_z[i]
         }
     }
-    
+
     Behavior {
         identifier: MOTION1_BEHAVIOR_ID,
-        required_columns: DataColumns::PosZ | DataColumns::MotionZ,
+        required_columns: StandardDataColumns::PosZ | StandardDataColumns::MotionZ,
         act,
     }
 }
 
 pub const GRAVITY1_BEHAVIOR_ID: &str = "gravity1";
-pub fn gravity1_behavior() -> Behavior {
+pub fn gravity1_behavior() -> Behavior<StandardColumns> {
     #[multiversion(targets = "simd")]
-    fn act(columns: &mut Columns, size: usize) {
+    fn act(columns: &mut StandardColumns, size: usize) {
         let ticks_existed = &columns.ticks_existed[0..size.div_ceil(N)];
         let mot = &mut columns.motion_y[0..size.div_ceil(N)];
         let gravity = &mut columns.gravity_y[0..size.div_ceil(N)];
@@ -42,19 +43,18 @@ pub fn gravity1_behavior() -> Behavior {
             mot[i] += gravity[i] * ticks_existed[i].cast::<f32>();
         }
     }
-    
-    
+
     Behavior {
         identifier: GRAVITY1_BEHAVIOR_ID,
-        required_columns: DataColumns::MotionY | DataColumns::GravityY,
+        required_columns: StandardDataColumns::MotionY | StandardDataColumns::GravityY,
         act,
     }
 }
 
 pub const ACCELERATION1_BEHAVIOR_ID: &str = "acceleration1";
-pub fn acceleration1_behavior() -> Behavior {
+pub fn acceleration1_behavior() -> Behavior<StandardColumns> {
     #[multiversion(targets = "simd")]
-    fn act(columns: &mut Columns, size: usize) {
+    fn act(columns: &mut StandardColumns, size: usize) {
         let speed_accel = &mut columns.speed_accel[0..size.div_ceil(N)];
         let motion = &mut columns.motion_z[0..size.div_ceil(N)];
 
@@ -62,18 +62,18 @@ pub fn acceleration1_behavior() -> Behavior {
             motion[i] += speed_accel[i];
         }
     }
-    
+
     Behavior {
         identifier: ACCELERATION1_BEHAVIOR_ID,
-        required_columns: DataColumns::MotionZ | DataColumns::SpeedAccel,
+        required_columns: StandardDataColumns::MotionZ | StandardDataColumns::SpeedAccel,
         act,
     }
 }
 
 pub const ROTATE_ORIENTATION_BEHAVIOR_ID: &str = "rotate_orientation";
-pub fn rotate_orientation_behavior() -> Behavior {
+pub fn rotate_orientation_behavior() -> Behavior<StandardColumns> {
     #[multiversion(targets = "simd")]
-    fn act(columns: &mut Columns, size: usize) {
+    fn act(columns: &mut StandardColumns, size: usize) {
         let orientation = &mut columns.orientation[0..size];
         let old_orientation = &mut columns.old_orientation[0..size];
         let rotation = &mut columns.rotation[0..size];
@@ -83,18 +83,18 @@ pub fn rotate_orientation_behavior() -> Behavior {
             orientation[i] *= rotation[i];
         }
     }
-    
+
     Behavior {
         identifier: ROTATE_ORIENTATION_BEHAVIOR_ID,
-        required_columns: DataColumns::Rotation | DataColumns::Orientation,
+        required_columns: StandardDataColumns::Rotation | StandardDataColumns::Orientation,
         act,
     }
 }
 
 pub const ROTATE_FORWARD_BEHAVIOR_ID: &str = "rotate_forward";
-pub fn rotate_forward_behavior() -> Behavior {
+pub fn rotate_forward_behavior() -> Behavior<StandardColumns> {
     #[multiversion(targets = "simd")]
-    fn act(columns: &mut Columns, size: usize) {
+    fn act(columns: &mut StandardColumns, size: usize) {
         let forward_x = &mut columns.forward_x[0..size.div_ceil(N)];
         let forward_y = &mut columns.forward_y[0..size.div_ceil(N)];
         let forward_z = &mut columns.forward_z[0..size.div_ceil(N)];
@@ -115,18 +115,18 @@ pub fn rotate_forward_behavior() -> Behavior {
             }
         }
     }
-    
+
     Behavior {
         identifier: ROTATE_FORWARD_BEHAVIOR_ID,
-        required_columns: DataColumns::Rotation | DataColumns::Forward,
-        act
+        required_columns: StandardDataColumns::Rotation | StandardDataColumns::Forward,
+        act,
     }
 }
 
 pub const MOTION3_BEHAVIOR_ID: &str = "motion3";
-pub fn motion3_behavior() -> Behavior {
+pub fn motion3_behavior() -> Behavior<StandardColumns> {
     #[multiversion(targets = "simd")]
-    fn act(columns: &mut Columns, size: usize) {
+    fn act(columns: &mut StandardColumns, size: usize) {
         let motion_x = &mut columns.motion_x[0..size.div_ceil(N)];
         let motion_y = &mut columns.motion_y[0..size.div_ceil(N)];
         let motion_z = &mut columns.motion_z[0..size.div_ceil(N)];
@@ -153,23 +153,23 @@ pub fn motion3_behavior() -> Behavior {
             pos_z[i] += motion_z[i]
         }
     }
-    
+
     Behavior {
         identifier: MOTION3_BEHAVIOR_ID,
-        required_columns: DataColumns::PosX
-            | DataColumns::PosY
-            | DataColumns::PosZ
-            | DataColumns::MotionX
-            | DataColumns::MotionY
-            | DataColumns::MotionZ,
-        act
+        required_columns: StandardDataColumns::PosX
+            | StandardDataColumns::PosY
+            | StandardDataColumns::PosZ
+            | StandardDataColumns::MotionX
+            | StandardDataColumns::MotionY
+            | StandardDataColumns::MotionZ,
+        act,
     }
 }
 
 pub const GRAVITY3_BEHAVIOR_ID: &str = "gravity3";
-pub fn gravity3_behavior() -> Behavior {
+pub fn gravity3_behavior() -> Behavior<StandardColumns> {
     #[multiversion(targets = "simd")]
-    fn act(columns: &mut Columns, size: usize) {
+    fn act(columns: &mut StandardColumns, size: usize) {
         let ticks_existed = &columns.ticks_existed[0..size.div_ceil(N)];
 
         let motion_x = &mut columns.motion_x[0..size.div_ceil(N)];
@@ -191,18 +191,18 @@ pub fn gravity3_behavior() -> Behavior {
             motion_z[i] += gravity_z[i] * ticks_existed[i].cast::<f32>();
         }
     }
-    
+
     Behavior {
         identifier: GRAVITY3_BEHAVIOR_ID,
-        required_columns: DataColumns::MotionY | DataColumns::GravityY,
-        act
+        required_columns: StandardDataColumns::MotionY | StandardDataColumns::GravityY,
+        act,
     }
 }
 
 pub const ACCELERATION3_BEHAVIOR_ID: &str = "acceleration3";
-pub fn acceleration3_behavior() -> Behavior {
+pub fn acceleration3_behavior() -> Behavior<StandardColumns> {
     #[multiversion(targets = "simd")]
-    fn act(columns: &mut Columns, size: usize) {
+    fn act(columns: &mut StandardColumns, size: usize) {
         let speed_accel = &mut columns.speed_accel[0..size.div_ceil(N)];
 
         let forward_x = &mut columns.forward_x[0..size.div_ceil(N)];
@@ -224,23 +224,22 @@ pub fn acceleration3_behavior() -> Behavior {
             motion_z[i] += forward_z[i] * speed_accel[i];
         }
     }
-    
+
     Behavior {
         identifier: ACCELERATION3_BEHAVIOR_ID,
-        required_columns: DataColumns::SpeedAccel
-            | DataColumns::MotionX
-            | DataColumns::MotionY
-            | DataColumns::MotionZ
-            | DataColumns::Forward,
-        act
+        required_columns: StandardDataColumns::SpeedAccel
+            | StandardDataColumns::MotionX
+            | StandardDataColumns::MotionY
+            | StandardDataColumns::MotionZ
+            | StandardDataColumns::Forward,
+        act,
     }
 }
 
 pub const MANDATORY_END_BEHAVIOR_ID: &str = "mandatory_end";
-pub fn mandatory_end() -> Behavior {
-    
+pub fn mandatory_end() -> Behavior<StandardColumns> {
     #[multiversion(targets = "simd")]
-    fn act(columns: &mut Columns, size: usize) {
+    fn act(columns: &mut StandardColumns, size: usize) {
         let ticks_existed = &mut columns.ticks_existed[0..size.div_ceil(N)];
         let end_time = &mut columns.end_time[0..size.div_ceil(N)];
         let next_stage = &mut columns.next_stage[0..size];
@@ -304,66 +303,78 @@ pub fn mandatory_end() -> Behavior {
                     let mut next_stages = std::mem::take(&mut next_stage[idx]);
                     next_stages.iter_mut().for_each(|next| {
                         next.behavior_data.iter_mut().for_each(|data| match data {
-                            BehaviorData::PosX(ref mut v) => {
-                                *v += value_or_simd(pos_x, DataColumns::PosY)
+                            StandardSpawnData::PosX(ref mut v) => {
+                                *v += value_or_simd(pos_x, StandardDataColumns::PosY)
                             }
-                            BehaviorData::PosY(ref mut v) => {
-                                *v += value_or_simd(pos_y, DataColumns::PosY)
+                            StandardSpawnData::PosY(ref mut v) => {
+                                *v += value_or_simd(pos_y, StandardDataColumns::PosY)
                             }
-                            BehaviorData::PosZ(ref mut v) => {
-                                *v += value_or_simd(pos_z, DataColumns::PosY)
+                            StandardSpawnData::PosZ(ref mut v) => {
+                                *v += value_or_simd(pos_z, StandardDataColumns::PosY)
                             }
-                            BehaviorData::Orientation(ref mut v) => {
-                                if columns.required_columns.contains(DataColumns::Orientation) {
+                            StandardSpawnData::Orientation(ref mut v) => {
+                                if columns
+                                    .required_columns
+                                    .contains(StandardDataColumns::Orientation)
+                                {
                                     *v = orientation[idx] * *v
                                 }
                             }
-                            BehaviorData::Appearance { .. } => {}
-                            BehaviorData::MainColor(ref mut v) => {
-                                if columns.required_columns.contains(DataColumns::MainColor) {
+                            StandardSpawnData::Appearance { .. } => {}
+                            StandardSpawnData::MainColor(ref mut v) => {
+                                if columns
+                                    .required_columns
+                                    .contains(StandardDataColumns::MainColor)
+                                {
                                     *v = main_color[i][j]
                                 }
                             }
-                            BehaviorData::SecondaryColor(ref mut v) => {
-                                if columns.required_columns.contains(DataColumns::SecondaryColor) {
+                            StandardSpawnData::SecondaryColor(ref mut v) => {
+                                if columns
+                                    .required_columns
+                                    .contains(StandardDataColumns::SecondaryColor)
+                                {
                                     *v = secondary_color[i][j]
                                 }
                             }
-                            BehaviorData::Damage(ref mut v) => {
-                                *v += value_or_simd(damage, DataColumns::Damage)
+                            StandardSpawnData::Damage(ref mut v) => {
+                                *v += value_or_simd(damage, StandardDataColumns::Damage)
                             }
-                            BehaviorData::SizeX(ref mut v) => {
-                                *v += value_or_simd(scale_x, DataColumns::ScaleX)
+                            StandardSpawnData::SizeX(ref mut v) => {
+                                *v += value_or_simd(scale_x, StandardDataColumns::ScaleX)
                             }
-                            BehaviorData::SizeY(ref mut v) => {
-                                *v += value_or_simd(scale_y, DataColumns::ScaleY)
+                            StandardSpawnData::SizeY(ref mut v) => {
+                                *v += value_or_simd(scale_y, StandardDataColumns::ScaleY)
                             }
-                            BehaviorData::SizeZ(ref mut v) => {
-                                *v += value_or_simd(scale_z, DataColumns::ScaleZ)
+                            StandardSpawnData::SizeZ(ref mut v) => {
+                                *v += value_or_simd(scale_z, StandardDataColumns::ScaleZ)
                             }
-                            BehaviorData::MotionX(ref mut v) => {
-                                *v += value_or_simd(motion_x, DataColumns::MotionX)
+                            StandardSpawnData::MotionX(ref mut v) => {
+                                *v += value_or_simd(motion_x, StandardDataColumns::MotionX)
                             }
-                            BehaviorData::MotionY(ref mut v) => {
-                                *v += value_or_simd(motion_y, DataColumns::MotionY)
+                            StandardSpawnData::MotionY(ref mut v) => {
+                                *v += value_or_simd(motion_y, StandardDataColumns::MotionY)
                             }
-                            BehaviorData::MotionZ(ref mut v) => {
-                                *v += value_or_simd(motion_z, DataColumns::MotionZ)
+                            StandardSpawnData::MotionZ(ref mut v) => {
+                                *v += value_or_simd(motion_z, StandardDataColumns::MotionZ)
                             }
-                            BehaviorData::GravityX(ref mut v) => {
-                                *v += value_or_simd(gravity_x, DataColumns::GravityX)
+                            StandardSpawnData::GravityX(ref mut v) => {
+                                *v += value_or_simd(gravity_x, StandardDataColumns::GravityX)
                             }
-                            BehaviorData::GravityY(ref mut v) => {
-                                *v += value_or_simd(gravity_y, DataColumns::GravityY)
+                            StandardSpawnData::GravityY(ref mut v) => {
+                                *v += value_or_simd(gravity_y, StandardDataColumns::GravityY)
                             }
-                            BehaviorData::GravityZ(ref mut v) => {
-                                *v += value_or_simd(gravity_z, DataColumns::GravityZ)
+                            StandardSpawnData::GravityZ(ref mut v) => {
+                                *v += value_or_simd(gravity_z, StandardDataColumns::GravityZ)
                             }
-                            BehaviorData::SpeedAccel(ref mut v) => {
-                                *v += value_or_simd(speed_accel, DataColumns::SpeedAccel)
+                            StandardSpawnData::SpeedAccel(ref mut v) => {
+                                *v += value_or_simd(speed_accel, StandardDataColumns::SpeedAccel)
                             }
-                            BehaviorData::Forward(ref mut v) => {
-                                if columns.required_columns.contains(DataColumns::Forward) {
+                            StandardSpawnData::Forward(ref mut v) => {
+                                if columns
+                                    .required_columns
+                                    .contains(StandardDataColumns::Forward)
+                                {
                                     *v = UnitVector3::new_normalize(Vector3::new(
                                         forward_x[i][j],
                                         forward_y[i][j],
@@ -371,8 +382,11 @@ pub fn mandatory_end() -> Behavior {
                                     ))
                                 }
                             }
-                            BehaviorData::Rotation(ref mut v) => {
-                                if columns.required_columns.contains(DataColumns::Orientation) {
+                            StandardSpawnData::Rotation(ref mut v) => {
+                                if columns
+                                    .required_columns
+                                    .contains(StandardDataColumns::Orientation)
+                                {
                                     *v = rotation[idx] * *v
                                 }
                             }
@@ -392,10 +406,28 @@ pub fn mandatory_end() -> Behavior {
             }
         }
     }
-    
+
     Behavior {
         identifier: MANDATORY_END_BEHAVIOR_ID,
         required_columns: EnumSet::EMPTY,
-        act
+        act,
+    }
+}
+
+pub trait StandardTopHandlerExt {
+    fn register_standard_behaviors(&mut self);
+}
+
+impl StandardTopHandlerExt for TopDanmakuBehaviorsHandler<StandardColumns> {
+    fn register_standard_behaviors(&mut self) {
+        self.register_behavior(motion1_behavior());
+        self.register_behavior(gravity1_behavior());
+        self.register_behavior(acceleration1_behavior());
+        self.register_behavior(rotate_orientation_behavior());
+        self.register_behavior(rotate_forward_behavior());
+        self.register_behavior(motion3_behavior());
+        self.register_behavior(gravity3_behavior());
+        self.register_behavior(acceleration3_behavior());
+        self.register_behavior(mandatory_end());
     }
 }

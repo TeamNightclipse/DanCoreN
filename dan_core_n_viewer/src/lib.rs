@@ -1,5 +1,7 @@
-use dan_core_n::behavior::handlers::TopDanmakuBehaviorsHandler;
-use dan_core_n::behavior::standard_behaviors::*;
+use dan_core_n::danmaku::{
+    handlers::TopDanmakuBehaviorsHandler,
+    standard::StandardColumns,
+};
 use std::sync::Arc;
 
 use pollster::FutureExt;
@@ -12,6 +14,7 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
+use dan_core_n::danmaku::standard::behaviors::StandardTopHandlerExt;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -19,7 +22,7 @@ use wasm_bindgen::prelude::*;
 // Based on https://sotrh.github.io/learn-wgpu
 
 struct TopState<'a> {
-    top_handler: TopDanmakuBehaviorsHandler,
+    top_handler: TopDanmakuBehaviorsHandler<StandardColumns>,
     display_state: Option<DisplayState<'a>>,
 }
 
@@ -254,18 +257,7 @@ pub fn run() {
     }
 
     let mut top_handler = TopDanmakuBehaviorsHandler::new();
-    top_handler.register_behavior(motion1_behavior());
-    top_handler.register_behavior(gravity1_behavior());
-    top_handler.register_behavior(acceleration1_behavior());
-
-    top_handler.register_behavior(rotate_orientation_behavior());
-    top_handler.register_behavior(rotate_forward_behavior());
-
-    top_handler.register_behavior(motion3_behavior());
-    top_handler.register_behavior(gravity3_behavior());
-    top_handler.register_behavior(acceleration3_behavior());
-
-    top_handler.register_behavior(mandatory_end());
+    top_handler.register_standard_behaviors();
 
     let event_loop = EventLoop::new().unwrap();
     cfg_if::cfg_if! {

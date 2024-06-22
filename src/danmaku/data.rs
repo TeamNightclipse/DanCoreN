@@ -1,53 +1,23 @@
 use std::collections::HashMap;
-use enumset::EnumSet;
 
-use nalgebra::{Matrix4, UnitQuaternion, UnitVector3};
-use crate::behavior::columns::DataColumns;
+use enumset::{EnumSet, EnumSetType};
+use nalgebra::Matrix4;
 
 use crate::form::Form;
 
-#[derive(Clone, Debug)]
-pub enum BehaviorData {
-    PosX(f32),
-    PosY(f32),
-    PosZ(f32),
-    Orientation(UnitQuaternion<f32>),
-    Appearance {
-        form: &'static Form,
-    },
-    MainColor(i32),
-    SecondaryColor(i32),
-    Damage(f32),
-    SizeX(f32),
-    SizeY(f32),
-    SizeZ(f32),
-    
-    MotionX(f32),
-    MotionY(f32),
-    MotionZ(f32),
-
-    GravityX(f32),
-    GravityY(f32),
-    GravityZ(f32),
-    
-    SpeedAccel(f32),
-    Forward(UnitVector3<f32>),
-    Rotation(UnitQuaternion<f32>)
-}
-
 #[derive(Clone)]
-pub struct DanmakuSpawnData {
+pub struct DanmakuSpawnData<SpawnData, DataColumns: EnumSetType> {
     pub end_time: i16,
-    pub behavior_data: Vec<BehaviorData>,
+    pub behavior_data: Vec<SpawnData>,
     pub render_properties: HashMap<&'static str, f32>,
     pub behaviors: Vec<&'static str>,
     pub next_stage_add_data: EnumSet<DataColumns>,
-    pub next_stage: Vec<DanmakuSpawnData>,
+    pub next_stage: Vec<DanmakuSpawnData<SpawnData, DataColumns>>,
     pub parent: Option<i128>,
-    pub children: Vec<DanmakuSpawnData>,
+    pub children: Vec<DanmakuSpawnData<SpawnData, DataColumns>>,
     pub family_depth: i16,
 }
-impl DanmakuSpawnData {
+impl<SD, DC: EnumSetType> DanmakuSpawnData<SD, DC> {
     fn update_children_depth(&mut self) {
         self.children.iter_mut().for_each(|child| {
             child.family_depth = self.family_depth + 1;

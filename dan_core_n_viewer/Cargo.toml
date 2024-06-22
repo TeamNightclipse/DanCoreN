@@ -1,0 +1,39 @@
+[package]
+name = "dan_core_n_viewer"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "dan_core_n_viewer_bin"
+path = "src/main.rs"
+
+[dependencies]
+cfg-if = "1"
+winit = { version = "0.30.3", features = ["rwh_05"] }
+env_logger = "0.11.3"
+log = "0.4"
+wgpu = "0.20.1"
+pollster = "0.3"
+
+dan_core_n = {path = ".."}
+enumset = "1.1.3"
+nalgebra = "0.32.6"
+nalgebra-glm = "0.18.0"
+itertools = "0.13.0"
+
+# the other regular dependencies...
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1.6"
+console_log = "1.0"
+wgpu = { version = "0.20.1", features = ["webgl"]}
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4.30"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Element",
+]}

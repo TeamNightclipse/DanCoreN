@@ -1,3 +1,6 @@
+[workspace]
+members = ["dan_core_n_viewer"]
+
 [package]
 name = "dan_core_n"
 version = "0.1.0"

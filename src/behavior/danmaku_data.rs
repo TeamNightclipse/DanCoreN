@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use enumset::EnumSet;
 
 use nalgebra::{Matrix4, UnitQuaternion, UnitVector3};
-use crate::behavior::main_columns::DataColumns;
+use crate::behavior::columns::DataColumns;
 
 use crate::form::Form;
 

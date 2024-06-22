@@ -1,5 +1,5 @@
 use crate::behavior::danmaku_data::{BehaviorData, DanmakuSpawnData, RenderData};
-use crate::behavior::main_columns::{Columns, DataColumns, N_F32};
+use crate::behavior::columns::{Columns, DataColumns, N};
 use crate::behavior::Behavior;
 use crate::color::ColorHex;
 use enumset::EnumSet;
@@ -227,11 +227,11 @@ impl DanmakuBehaviorHandler {
         required_columns: EnumSet<DataColumns>,
         i: usize,
         required: DataColumns,
-        vec: &mut [Simd<A, N_F32>],
+        vec: &mut [Simd<A, N>],
         data: A,
     ) {
         if required_columns.contains(required) {
-            vec[i.div_ceil(N_F32)][i % N_F32] = data;
+            vec[i.div_ceil(N)][i % N] = data;
         }
     }
 
@@ -523,8 +523,8 @@ impl DanmakuBehaviorHandler {
             }
         }
 
-        self.columns.ticks_existed[i.div_ceil(N_F32)][i % N_F32] = 0;
-        self.columns.end_time[i.div_ceil(N_F32)][i % N_F32] = danmaku.end_time;
+        self.columns.ticks_existed[i.div_ceil(N)][i % N] = 0;
+        self.columns.end_time[i.div_ceil(N)][i % N] = danmaku.end_time;
         self.columns.dead[i] = false;
         self.columns.next_stage[i] = danmaku.next_stage;
         self.columns.next_stage_add_data[i] = danmaku.next_stage_add_data;
@@ -558,13 +558,13 @@ impl DanmakuBehaviorHandler {
         partial_ticks: f32,
         used: bool,
         i: usize,
-        old: &[Simd<f32, N_F32>],
-        new: &[Simd<f32, N_F32>],
+        old: &[Simd<f32, N>],
+        new: &[Simd<f32, N>],
     ) -> f32 {
         if used {
             nalgebra_glm::lerp_scalar(
-                old[i.div_ceil(N_F32)][i % N_F32],
-                new[i.div_ceil(N_F32)][i % N_F32],
+                old[i.div_ceil(N)][i % N],
+                new[i.div_ceil(N)][i % N],
                 partial_ticks,
             )
         } else {
@@ -690,10 +690,10 @@ impl DanmakuBehaviorHandler {
                 .filter(|i| !dead.get(*i).unwrap_or(&false))
                 .map(|i| (id.get(i).unwrap_or(&0), i))
                 .map(|(id, i)| {
-                    let lerp_color = |has_color: bool, new: &Vec<Simd<i32, N_F32>>, old: &Vec<Simd<i32, N_F32>>| -> ColorHex {
+                    let lerp_color = |has_color: bool, new: &Vec<Simd<i32, N>>, old: &Vec<Simd<i32, N>>| -> ColorHex {
                         if has_color {
-                            ColorHex(new[i.div_ceil(N_F32)][i % N_F32])
-                                .lerp_through_hsv(ColorHex(old[i.div_ceil(N_F32)][i % N_F32]), partial_ticks)
+                            ColorHex(new[i.div_ceil(N)][i % N])
+                                .lerp_through_hsv(ColorHex(old[i.div_ceil(N)][i % N]), partial_ticks)
                         } else {
                             ColorHex(0)
                         }
@@ -710,8 +710,8 @@ impl DanmakuBehaviorHandler {
                             model_mat: *transform_mats.get(i).unwrap_or(&Matrix4::identity()),
                             main_color: main_color.0,
                             secondary_color: secondary_color.0,
-                            ticks_existed: ticks_existed[i.div_ceil(N_F32)][i & N_F32],
-                            end_time: end_time[i.div_ceil(N_F32)][i & N_F32],
+                            ticks_existed: ticks_existed[i.div_ceil(N)][i & N],
+                            end_time: end_time[i.div_ceil(N)][i & N],
                         },
                     )
                 })

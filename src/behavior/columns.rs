@@ -6,15 +6,7 @@ use std::collections::HashMap;
 use std::simd::{Simd, SimdElement};
 use target_features::CURRENT_TARGET;
 
-pub const N_F32: usize = if let Some(size) = CURRENT_TARGET.suggested_simd_width::<f32>() {
-    size
-} else {
-    // If SIMD isn't supported natively, we use a vector of 1 element.
-    // This is effectively a scalar value.
-    1
-};
-
-pub const N_I32: usize = if let Some(size) = CURRENT_TARGET.suggested_simd_width::<i32>() {
+pub const N: usize = if let Some(size) = CURRENT_TARGET.suggested_simd_width::<f32>() {
     size
 } else {
     // If SIMD isn't supported natively, we use a vector of 1 element.
@@ -26,37 +18,37 @@ pub struct Columns {
     pub required_columns: EnumSet<DataColumns>,
     pub id: Vec<i128>,
 
-    pub pos_x: Vec<Simd<f32, N_F32>>,
-    pub pos_y: Vec<Simd<f32, N_F32>>,
-    pub pos_z: Vec<Simd<f32, N_F32>>,
+    pub pos_x: Vec<Simd<f32, N>>,
+    pub pos_y: Vec<Simd<f32, N>>,
+    pub pos_z: Vec<Simd<f32, N>>,
 
-    pub old_pos_x: Vec<Simd<f32, N_F32>>,
-    pub old_pos_y: Vec<Simd<f32, N_F32>>,
-    pub old_pos_z: Vec<Simd<f32, N_F32>>,
+    pub old_pos_x: Vec<Simd<f32, N>>,
+    pub old_pos_y: Vec<Simd<f32, N>>,
+    pub old_pos_z: Vec<Simd<f32, N>>,
 
-    pub scale_x: Vec<Simd<f32, N_F32>>,
-    pub scale_y: Vec<Simd<f32, N_F32>>,
-    pub scale_z: Vec<Simd<f32, N_F32>>,
+    pub scale_x: Vec<Simd<f32, N>>,
+    pub scale_y: Vec<Simd<f32, N>>,
+    pub scale_z: Vec<Simd<f32, N>>,
 
-    pub old_scale_x: Vec<Simd<f32, N_F32>>,
-    pub old_scale_y: Vec<Simd<f32, N_F32>>,
-    pub old_scale_z: Vec<Simd<f32, N_F32>>,
+    pub old_scale_x: Vec<Simd<f32, N>>,
+    pub old_scale_y: Vec<Simd<f32, N>>,
+    pub old_scale_z: Vec<Simd<f32, N>>,
 
     pub orientation: Vec<UnitQuaternion<f32>>,
     pub old_orientation: Vec<UnitQuaternion<f32>>,
 
-    pub main_color: Vec<Simd<i32, N_I32>>,
-    pub secondary_color: Vec<Simd<i32, N_I32>>,
+    pub main_color: Vec<Simd<i32, N>>,
+    pub secondary_color: Vec<Simd<i32, N>>,
 
-    pub old_main_color: Vec<Simd<i32, N_I32>>,
-    pub old_secondary_color: Vec<Simd<i32, N_I32>>,
+    pub old_main_color: Vec<Simd<i32, N>>,
+    pub old_secondary_color: Vec<Simd<i32, N>>,
 
-    pub damage: Vec<Simd<f32, N_F32>>,
+    pub damage: Vec<Simd<f32, N>>,
     pub form: Vec<&'static Form>,
     pub render_properties: Vec<HashMap<&'static str, f32>>,
 
-    pub ticks_existed: Vec<Simd<i16, N_I32>>,
-    pub end_time: Vec<Simd<i16, N_I32>>,
+    pub ticks_existed: Vec<Simd<i16, N>>,
+    pub end_time: Vec<Simd<i16, N>>,
     pub dead: Vec<bool>,
     pub next_stage: Vec<Vec<DanmakuSpawnData>>,
     pub next_stage_add_data: Vec<EnumSet<DataColumns>>,
@@ -70,19 +62,19 @@ pub struct Columns {
     pub add_spawns: Vec<(DanmakuSpawnData, Option<usize>)>,
 
     // Behavior specific data
-    pub motion_x: Vec<Simd<f32, N_F32>>,
-    pub motion_y: Vec<Simd<f32, N_F32>>,
-    pub motion_z: Vec<Simd<f32, N_F32>>,
+    pub motion_x: Vec<Simd<f32, N>>,
+    pub motion_y: Vec<Simd<f32, N>>,
+    pub motion_z: Vec<Simd<f32, N>>,
 
-    pub gravity_x: Vec<Simd<f32, N_F32>>,
-    pub gravity_y: Vec<Simd<f32, N_F32>>,
-    pub gravity_z: Vec<Simd<f32, N_F32>>,
+    pub gravity_x: Vec<Simd<f32, N>>,
+    pub gravity_y: Vec<Simd<f32, N>>,
+    pub gravity_z: Vec<Simd<f32, N>>,
 
-    pub speed_accel: Vec<Simd<f32, N_F32>>,
+    pub speed_accel: Vec<Simd<f32, N>>,
 
-    pub forward_x: Vec<Simd<f32, N_F32>>,
-    pub forward_y: Vec<Simd<f32, N_F32>>,
-    pub forward_z: Vec<Simd<f32, N_F32>>,
+    pub forward_x: Vec<Simd<f32, N>>,
+    pub forward_y: Vec<Simd<f32, N>>,
+    pub forward_z: Vec<Simd<f32, N>>,
 
     pub rotation: Vec<UnitQuaternion<f32>>,
 }
@@ -101,26 +93,17 @@ impl Columns {
         }
     }
 
-    fn sized_simd_always<const N: usize, A: SimdElement>(
-        contents: A,
-        max_column_size: usize,
-    ) -> Vec<Simd<A, N>>
-    where
-        std::simd::LaneCount<N>: std::simd::SupportedLaneCount,
-    {
+    fn sized_simd_always<A: SimdElement>(contents: A, max_column_size: usize) -> Vec<Simd<A, N>> {
         let amount = max_column_size.div_ceil(N);
         vec![Simd::splat(contents); amount]
     }
 
-    fn sized_simd<const N: usize, A: SimdElement>(
+    fn sized_simd<A: SimdElement>(
         contents: A,
         required: EnumSet<DataColumns>,
         max_column_size: usize,
         required_column: DataColumns,
-    ) -> Vec<Simd<A, N>>
-    where
-        std::simd::LaneCount<N>: std::simd::SupportedLaneCount,
-    {
+    ) -> Vec<Simd<A, N>> {
         if required.contains(required_column) {
             Self::sized_simd_always(contents, max_column_size)
         } else {
@@ -133,78 +116,18 @@ impl Columns {
             required_columns: required,
 
             id: vec![0; max_column_size],
-            pos_x: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::PosX,
-            ),
-            pos_y: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::PosY,
-            ),
-            pos_z: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::PosZ,
-            ),
-            old_pos_x: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::PosX,
-            ),
-            old_pos_y: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::PosY,
-            ),
-            old_pos_z: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::PosZ,
-            ),
-            scale_x: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::ScaleX,
-            ),
-            scale_y: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::ScaleX,
-            ),
-            scale_z: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::ScaleX,
-            ),
-            old_scale_x: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::ScaleX,
-            ),
-            old_scale_y: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::ScaleY,
-            ),
-            old_scale_z: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::ScaleZ,
-            ),
+            pos_x: Self::sized_simd(0.0, required, max_column_size, DataColumns::PosX),
+            pos_y: Self::sized_simd(0.0, required, max_column_size, DataColumns::PosY),
+            pos_z: Self::sized_simd(0.0, required, max_column_size, DataColumns::PosZ),
+            old_pos_x: Self::sized_simd(0.0, required, max_column_size, DataColumns::PosX),
+            old_pos_y: Self::sized_simd(0.0, required, max_column_size, DataColumns::PosY),
+            old_pos_z: Self::sized_simd(0.0, required, max_column_size, DataColumns::PosZ),
+            scale_x: Self::sized_simd(0.0, required, max_column_size, DataColumns::ScaleX),
+            scale_y: Self::sized_simd(0.0, required, max_column_size, DataColumns::ScaleX),
+            scale_z: Self::sized_simd(0.0, required, max_column_size, DataColumns::ScaleX),
+            old_scale_x: Self::sized_simd(0.0, required, max_column_size, DataColumns::ScaleX),
+            old_scale_y: Self::sized_simd(0.0, required, max_column_size, DataColumns::ScaleY),
+            old_scale_z: Self::sized_simd(0.0, required, max_column_size, DataColumns::ScaleZ),
             orientation: Self::sized_vec(
                 UnitQuaternion::identity(),
                 required,
@@ -217,36 +140,21 @@ impl Columns {
                 max_column_size,
                 DataColumns::Orientation,
             ),
-            main_color: Self::sized_simd::<N_I32, i32>(
-                0,
-                required,
-                max_column_size,
-                DataColumns::MainColor,
-            ),
-            secondary_color: Self::sized_simd::<N_I32, i32>(
+            main_color: Self::sized_simd(0, required, max_column_size, DataColumns::MainColor),
+            secondary_color: Self::sized_simd(
                 0,
                 required,
                 max_column_size,
                 DataColumns::SecondaryColor,
             ),
-            old_main_color: Self::sized_simd::<N_I32, i32>(
-                0,
-                required,
-                max_column_size,
-                DataColumns::MainColor,
-            ),
-            old_secondary_color: Self::sized_simd::<N_I32, i32>(
+            old_main_color: Self::sized_simd(0, required, max_column_size, DataColumns::MainColor),
+            old_secondary_color: Self::sized_simd(
                 0,
                 required,
                 max_column_size,
                 DataColumns::SecondaryColor,
             ),
-            damage: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::Damage,
-            ),
+            damage: Self::sized_simd(0.0, required, max_column_size, DataColumns::Damage),
             form: Self::sized_vec(
                 &Form::SPHERE,
                 required,
@@ -259,8 +167,8 @@ impl Columns {
                 max_column_size,
                 DataColumns::Appearance,
             ),
-            ticks_existed: Self::sized_simd_always::<N_I32, i16>(0, max_column_size),
-            end_time: Self::sized_simd_always::<N_I32, i16>(0, max_column_size),
+            ticks_existed: Self::sized_simd_always(0, max_column_size),
+            end_time: Self::sized_simd_always(0, max_column_size),
             dead: vec![false; max_column_size],
             next_stage: vec![Vec::new(); max_column_size],
             next_stage_add_data: vec![EnumSet::EMPTY; max_column_size],
@@ -271,67 +179,17 @@ impl Columns {
             add_spawns: Vec::new(),
 
             // Behavior specific data
-            motion_x: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::MotionX,
-            ),
-            motion_y: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::MotionY,
-            ),
-            motion_z: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::MotionZ,
-            ),
-            gravity_x: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::GravityX,
-            ),
-            gravity_y: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::GravityY,
-            ),
-            gravity_z: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::GravityZ,
-            ),
-            speed_accel: Self::sized_simd::<N_F32, f32>(
-                0.0,
-                required,
-                max_column_size,
-                DataColumns::SpeedAccel,
-            ),
+            motion_x: Self::sized_simd(0.0, required, max_column_size, DataColumns::MotionX),
+            motion_y: Self::sized_simd(0.0, required, max_column_size, DataColumns::MotionY),
+            motion_z: Self::sized_simd(0.0, required, max_column_size, DataColumns::MotionZ),
+            gravity_x: Self::sized_simd(0.0, required, max_column_size, DataColumns::GravityX),
+            gravity_y: Self::sized_simd(0.0, required, max_column_size, DataColumns::GravityY),
+            gravity_z: Self::sized_simd(0.0, required, max_column_size, DataColumns::GravityZ),
+            speed_accel: Self::sized_simd(0.0, required, max_column_size, DataColumns::SpeedAccel),
 
-            forward_x: Self::sized_simd::<N_F32, f32>(
-                1.0,
-                required,
-                max_column_size,
-                DataColumns::Forward,
-            ),
-            forward_y: Self::sized_simd::<N_F32, f32>(
-                1.0,
-                required,
-                max_column_size,
-                DataColumns::Forward,
-            ),
-            forward_z: Self::sized_simd::<N_F32, f32>(
-                1.0,
-                required,
-                max_column_size,
-                DataColumns::Forward,
-            ),
+            forward_x: Self::sized_simd(1.0, required, max_column_size, DataColumns::Forward),
+            forward_y: Self::sized_simd(1.0, required, max_column_size, DataColumns::Forward),
+            forward_z: Self::sized_simd(1.0, required, max_column_size, DataColumns::Forward),
             rotation: Self::sized_vec(
                 UnitQuaternion::identity(),
                 required,
@@ -357,26 +215,22 @@ impl Columns {
         }
     }
 
-    fn resize_simd<const N: usize, A: Clone + SimdElement>(
+    fn resize_simd<A: Clone + SimdElement>(
         new_max_size: usize,
         vec: &mut Vec<Simd<A, N>>,
         new_obj: A,
-    ) where
-        std::simd::LaneCount<N>: std::simd::SupportedLaneCount,
-    {
+    ) {
         let chunks = new_max_size.div_ceil(N);
         vec.resize(chunks, Simd::splat(new_obj))
     }
 
-    fn resize_simd_if_required<const N: usize, A: Clone + SimdElement>(
+    fn resize_simd_if_required<A: Clone + SimdElement>(
         required_columns: EnumSet<DataColumns>,
         new_max_size: usize,
         required_column: DataColumns,
         vec: &mut Vec<Simd<A, N>>,
         new_obj: A,
-    ) where
-        std::simd::LaneCount<N>: std::simd::SupportedLaneCount,
-    {
+    ) {
         if required_columns.contains(required_column) {
             Self::resize_simd(new_max_size, vec, new_obj);
         }
@@ -642,14 +496,12 @@ impl Columns {
         vec.resize(new_max_size, value);
     }
 
-    fn compact_simd<const N: usize, A: SimdElement + Clone>(
+    fn compact_simd<A: SimdElement + Clone>(
         vec: &mut Vec<Simd<A, N>>,
         remove: &[bool],
         new_max_size: usize,
         value: A,
-    ) where
-        std::simd::LaneCount<N>: std::simd::SupportedLaneCount,
-    {
+    ) {
         let mut new_vec = vec![value; new_max_size];
         let mut stored_so_far = 0;
         vec.iter().enumerate().for_each(|(idx, v)| {

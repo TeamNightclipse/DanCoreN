@@ -1,10 +1,10 @@
 pub mod danmaku_data;
 pub mod handlers;
-pub mod main_columns;
+pub mod columns;
 pub mod standard_behaviors;
 
 use enumset::EnumSet;
-use main_columns::{Columns, DataColumns};
+use columns::{Columns, DataColumns};
 
 pub struct Behavior {
     pub identifier: &'static str,
